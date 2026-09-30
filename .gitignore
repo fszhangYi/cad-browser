@@ -2,7 +2,7 @@
 .tools/
 .wine-cad-browser/
 .wine-*/
-release/
+.deploy/
 packaging/dist/
 packaging/build/
 build/

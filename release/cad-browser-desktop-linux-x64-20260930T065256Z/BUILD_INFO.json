@@ -1,0 +1,12 @@
+{
+  "product": "cad-browser",
+  "app_id": "cad-browser",
+  "kind": "server",
+  "platform": "linux-x64",
+  "self_contained": true,
+  "requires_python_on_target": false,
+  "built_at": "20260930T065256Z",
+  "built_at_utc": "20260930T065256Z",
+  "entry": "cad-browser",
+  "notes": "Built on Linux via native PyInstaller onedir"
+}

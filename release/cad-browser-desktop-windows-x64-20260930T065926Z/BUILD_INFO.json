@@ -1,0 +1,12 @@
+{
+  "product": "cad-browser",
+  "app_id": "cad-browser",
+  "kind": "server",
+  "platform": "windows-x64",
+  "self_contained": true,
+  "requires_python_on_target": false,
+  "built_at": "20260930T065926Z",
+  "built_at_utc": "20260930T065926Z",
+  "entry": "cad-browser.exe",
+  "notes": "Built on Linux via Wine + embeddable CPython + PyInstaller"
+}

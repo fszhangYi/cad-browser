@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>数模与图纸</title>
+<style>
+  :root {
+    --bg: #121418;
+    --panel: #1b1f27;
+    --line: #2c3340;
+    --text: #e7ebf2;
+    --muted: #8b95a8;
+    --accent: #3dbeb6;
+    --warn: #e2b15a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", sans-serif; }
+  body { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: 52px 1fr; }
+  header {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 16px;
+    padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { font-size: 16px; font-weight: 600; margin: 0; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  #status { margin-left: auto; color: var(--muted); font-size: 12px; max-width: 48%; text-align: right; }
+  aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: #161a21; }
+  .filters { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line); }
+  .filters button, #download {
+    background: transparent; color: var(--text); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; cursor: pointer; font: inherit;
+  }
+  .filters button.on, #download { border-color: var(--accent); color: var(--accent); }
+  #list { overflow: auto; padding: 6px; }
+  .dir { color: var(--muted); font-size: 11px; padding: 10px 8px 4px; }
+  .item {
+    width: 100%; text-align: left; background: transparent; color: inherit; border: 0;
+    border-radius: 8px; padding: 8px; cursor: pointer; font: inherit;
+  }
+  .item:hover { background: #242a35; }
+  .item.on { background: #1d3332; }
+  .item .name { display: block; word-break: break-all; }
+  .item .meta { color: var(--muted); font-size: 11px; }
+  main { position: relative; min-width: 0; min-height: 0; }
+  #view, #sheet, #empty, #archive { position: absolute; inset: 0; }
+  #view { width: 100%; height: 100%; display: block; }
+  #sheet { width: 100%; height: 100%; border: 0; background: #2a2e36; display: none; }
+  #empty {
+    display: flex; align-items: center; justify-content: center; color: var(--muted);
+  }
+  #archive {
+    display: none; flex-direction: column; background: #161a21; overflow: hidden;
+  }
+  #archive .arch-head {
+    padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex;
+    flex-wrap: wrap; align-items: center; gap: 12px;
+  }
+  #archive .arch-title { font-weight: 600; }
+  #archive .arch-meta { color: var(--muted); font-size: 12px; margin-right: auto; }
+  #archive .arch-list { overflow: auto; padding: 8px 12px 24px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  #archive .arch-row {
+    display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 6px 8px;
+    border-bottom: 1px solid #222833; color: var(--text);
+  }
+  #archive .arch-row span:last-child { color: var(--muted); white-space: nowrap; }
+  #download, #archDownload {
+    background: transparent; color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 999px; padding: 4px 12px; cursor: pointer; font: inherit;
+  }
+  #download { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>数模与图纸</h1>
+  <div class="sub">STL / 同名 STL 的 STEP · PDF · ZIP（只读静态资源，不做转换）</div>
+  <div id="status"></div>
+  <button id="download" type="button">下载原文件</button>
+</header>
+<aside>
+  <div class="filters">
+    <button type="button" data-kind="all" class="on">全部</button>
+    <button type="button" data-kind="model">三维</button>
+    <button type="button" data-kind="drawing">图纸</button>
+    <button type="button" data-kind="archive">打包</button>
+  </div>
+  <div id="list"></div>
+</aside>
+<main>
+  <canvas id="view"></canvas>
+  <iframe id="sheet" title="图纸"></iframe>
+  <div id="empty">从左侧选择一个文件</div>
+  <div id="archive" style="display:none">
+    <div class="arch-head">
+      <div class="arch-title" id="archTitle"></div>
+      <div class="arch-meta" id="archMeta"></div>
+      <button type="button" id="archDownload">下载 ZIP</button>
+    </div>
+    <div class="arch-list" id="archList"></div>
+  </div>
+</main>
+<script src="/static/three.min.js"></script>
+<script src="/static/STLLoader.js"></script>
+<script src="/static/OrbitControls.js"></script>
+<script>
+const listEl = document.getElementById("list");
+const statusEl = document.getElementById("status");
+const emptyEl = document.getElementById("empty");
+const sheetEl = document.getElementById("sheet");
+const archiveEl = document.getElementById("archive");
+const archTitle = document.getElementById("archTitle");
+const archMeta = document.getElementById("archMeta");
+const archList = document.getElementById("archList");
+const archDownload = document.getElementById("archDownload");
+const canvas = document.getElementById("view");
+const downloadBtn = document.getElementById("download");
+const loader = new THREE.STLLoader();
+let files = [];
+let filter = "all";
+let current = null;
+let mesh = null;
+let openSeq = 0;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(0x121418);
+const scene = new THREE.Scene();
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 0.9);
+key.position.set(40, 80, 60);
+scene.add(key);
+const fill = new THREE.DirectionalLight(0x9eb4c8, 0.35);
+fill.position.set(-30, 20, -40);
+scene.add(fill);
+const grid = new THREE.GridHelper(200, 20, 0x3a4252, 0x242a34);
+scene.add(grid);
+const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 5000);
+camera.position.set(80, 60, 80);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.enableDamping = true;
+
+function frame() {
+  requestAnimationFrame(frame);
+  controls.update();
+  renderer.render(scene, camera);
+}
+frame();
+
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(canvas.parentElement);
+
+function sizeText(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+function kindText(file) {
+  if (file.kind === "drawing") return "图纸";
+  if (file.kind === "archive") return "ZIP";
+  if (file.kind === "mesh") return "STL";
+  return file.preview === "sibling" ? "STEP · 同名 STL" : "STEP · 无网格";
+}
+function visible(file) {
+  if (filter === "drawing") return file.kind === "drawing";
+  if (filter === "archive") return file.kind === "archive";
+  if (filter === "model") return file.kind === "mesh" || file.kind === "step";
+  return true;
+}
+
+function renderList() {
+  listEl.innerHTML = "";
+  let dir = null;
+  for (const file of files) {
+    if (!visible(file)) continue;
+    if (file.dir !== dir) {
+      dir = file.dir;
+      const label = document.createElement("div");
+      label.className = "dir";
+      label.textContent = dir;
+      listEl.appendChild(label);
+    }
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "item" + (current && current.path === file.path ? " on" : "");
+    btn.innerHTML = `<span class="name"></span><span class="meta"></span>`;
+    btn.querySelector(".name").textContent = file.name;
+    btn.querySelector(".meta").textContent = kindText(file) + " · " + sizeText(file.bytes);
+    btn.onclick = () => openFile(file);
+    listEl.appendChild(btn);
+  }
+}
+
+function showMode(mode) {
+  canvas.style.display = mode === "mesh" ? "block" : "none";
+  sheetEl.style.display = mode === "pdf" ? "block" : "none";
+  emptyEl.style.display = mode === "empty" ? "flex" : "none";
+  archiveEl.style.display = mode === "archive" ? "flex" : "none";
+}
+
+function clearMesh() {
+  if (!mesh) return;
+  scene.remove(mesh);
+  mesh.geometry.dispose();
+  mesh.material.dispose();
+  mesh = null;
+}
+
+function fit(geometry) {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const center = box.getCenter(new THREE.Vector3());
+  geometry.translate(-center.x, -center.y, -center.z);
+  const size = box.getSize(new THREE.Vector3());
+  const radius = 0.5 * Math.max(size.x, size.y, size.z, 1);
+  const dist = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * 1.35;
+  camera.position.set(dist * 0.7, dist * 0.55, dist);
+  camera.near = Math.max(dist / 500, 0.01);
+  camera.far = dist * 20;
+  camera.updateProjectionMatrix();
+  controls.target.set(0, 0, 0);
+  controls.update();
+  const span = Math.max(size.x, size.y, size.z, 20);
+  grid.scale.setScalar(span / 200);
+}
+
+function pathFromUrl() {
+  return new URLSearchParams(location.search).get("path") || "";
+}
+
+function syncUrl(file, { replace = false } = {}) {
+  const url = new URL(location.href);
+  if (file && file.path) url.searchParams.set("path", file.path);
+  else url.searchParams.delete("path");
+  const next = url.pathname + url.search + url.hash;
+  const cur = location.pathname + location.search + location.hash;
+  if (next === cur) return;
+  if (replace) history.replaceState({ path: file && file.path }, "", next);
+  else history.pushState({ path: file && file.path }, "", next);
+}
+
+function setTitle(file) {
+  document.title = file ? file.name + " · 数模与图纸" : "数模与图纸";
+}
+
+async function openFile(file, { fromHistory = false, replaceUrl = false } = {}) {
+  if (!file) return;
+  if (current && current.path === file.path && !fromHistory) {
+    syncUrl(file, { replace: true });
+    return;
+  }
+  const seq = ++openSeq;
+  current = file;
+  setTitle(file);
+  if (!fromHistory) syncUrl(file, { replace: replaceUrl });
+  renderList();
+  const rawUrl = "/raw?path=" + encodeURIComponent(file.path);
+  downloadBtn.style.display = "inline-block";
+  downloadBtn.onclick = () => { location.href = rawUrl; };
+  if (file.kind === "drawing") {
+    clearMesh();
+    showMode("pdf");
+    statusEl.textContent = file.path;
+    sheetEl.src = rawUrl;
+    return;
+  }
+  if (file.kind === "archive") {
+    clearMesh();
+    sheetEl.src = "about:blank";
+    showMode("archive");
+    archTitle.textContent = file.name;
+    archMeta.textContent = sizeText(file.bytes) + " · 读取目录…";
+    archList.innerHTML = "";
+    archDownload.onclick = () => { location.href = rawUrl; };
+    statusEl.textContent = file.path;
+    try {
+      const res = await fetch("/api/zip?path=" + encodeURIComponent(file.path));
+      if (seq !== openSeq) return;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || "无法读取 zip");
+      }
+      const data = await res.json();
+      const note = data.truncated ? "（仅显示前 " + data.count + " 个）" : "";
+      archMeta.textContent = sizeText(file.bytes) + " · " + data.count + " 个文件" + note;
+      archList.innerHTML = "";
+      for (const entry of data.entries) {
+        const row = document.createElement("div");
+        row.className = "arch-row";
+        row.innerHTML = "<span></span><span></span>";
+        row.children[0].textContent = entry.name;
+        row.children[1].textContent = sizeText(entry.bytes);
+        archList.appendChild(row);
+      }
+      statusEl.textContent = file.path + " · " + data.count + " 个文件";
+    } catch (err) {
+      if (seq !== openSeq) return;
+      archMeta.textContent = sizeText(file.bytes);
+      archList.textContent = err.message || "无法读取";
+    }
+    return;
+  }
+  if (file.kind === "step" && file.preview === "none") {
+    clearMesh();
+    sheetEl.src = "about:blank";
+    showMode("empty");
+    emptyEl.textContent = "该 STEP 旁没有同名 STL，无法预览（本服务不做转换）";
+    statusEl.textContent = file.path;
+    return;
+  }
+  showMode("mesh");
+  sheetEl.src = "about:blank";
+  statusEl.textContent = file.path;
+  try {
+    const res = await fetch("/mesh?path=" + encodeURIComponent(file.path));
+    if (seq !== openSeq) return;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || "加载失败");
+    }
+    const source = res.headers.get("X-Mesh-Source");
+    const geo = loader.parse(await res.arrayBuffer());
+    if (seq !== openSeq) return;
+    geo.computeVertexNormals();
+    clearMesh();
+    const material = new THREE.MeshStandardMaterial({ color: 0xc5ccd6, metalness: 0.15, roughness: 0.55 });
+    mesh = new THREE.Mesh(geo, material);
+    mesh.rotation.x = -Math.PI / 2;
+    scene.add(mesh);
+    fit(geo);
+    const note = source === "sibling" ? "预览用的是同目录同名 STL" : "";
+    statusEl.textContent = file.path + (note ? " · " + note : "");
+  } catch (err) {
+    if (seq !== openSeq) return;
+    clearMesh();
+    showMode("empty");
+    emptyEl.textContent = err.message || "无法显示";
+    statusEl.textContent = file.path;
+  }
+}
+
+function openPath(path, opts) {
+  const file = files.find((f) => f.path === path);
+  if (!file) {
+    statusEl.textContent = path ? "找不到：" + path : statusEl.textContent;
+    return false;
+  }
+  openFile(file, opts);
+  return true;
+}
+
+document.querySelectorAll(".filters button").forEach((btn) => {
+  btn.onclick = () => {
+    filter = btn.dataset.kind;
+    document.querySelectorAll(".filters button").forEach((b) => b.classList.toggle("on", b === btn));
+    renderList();
+  };
+});
+
+window.addEventListener("popstate", () => {
+  const path = (history.state && history.state.path) || pathFromUrl();
+  if (!path) {
+    current = null;
+    setTitle(null);
+    clearMesh();
+    sheetEl.src = "about:blank";
+    showMode("empty");
+    emptyEl.textContent = "从左侧选择一个文件";
+    downloadBtn.style.display = "none";
+    renderList();
+    return;
+  }
+  openPath(path, { fromHistory: true });
+});
+
+fetch("/api/catalog").then((r) => r.json()).then((data) => {
+  files = data.files;
+  statusEl.textContent = files.length + " 个文件";
+  renderList();
+  const initial = pathFromUrl();
+  if (initial) openPath(initial, { replaceUrl: true });
+}).catch(() => { statusEl.textContent = "目录读取失败"; });
+</script>
+</body>
+</html>
