@@ -1,0 +1,15 @@
+.venv/
+.tools/
+.wine-cad-browser/
+.wine-*/
+release/
+packaging/dist/
+packaging/build/
+build/
+dist/
+*.spec
+!packaging/*.spec
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/

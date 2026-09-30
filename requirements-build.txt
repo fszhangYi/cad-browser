@@ -1,0 +1,2 @@
+# Build-time only (runtime binary has no pip deps).
+pyinstaller>=6.3.0
